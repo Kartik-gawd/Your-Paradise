@@ -675,9 +675,9 @@ class ModernHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         parsed_url = urllib.parse.urlparse(self.path)
  
-        # Admin panel: localhost-only
+        # Admin panel: localhost / host admin only
         if parsed_url.path.startswith('/admin'):
-            if not admin_core.is_localhost(self):
+            if not (admin_core.is_localhost(self) or self.is_admin()):
                 self.send_error(404, "Not Found")
                 return
             query_params = urllib.parse.parse_qs(parsed_url.query)
@@ -759,9 +759,9 @@ class ModernHandler(http.server.SimpleHTTPRequestHandler):
         parsed_url   = urllib.parse.urlparse(self.path)
         query_params = urllib.parse.parse_qs(parsed_url.query)
  
-        # Admin panel: localhost-only, bypass all other checks 
+        # Admin panel: localhost / host admin only, bypass all other checks 
         if parsed_url.path.startswith('/admin'):
-            if not admin_core.is_localhost(self):
+            if not (admin_core.is_localhost(self) or self.is_admin()):
                 self.send_error(404, "Not Found")
                 return
             admin_core.handle_admin_request(self, parsed_url, query_params)
@@ -1740,6 +1740,8 @@ class ModernHandler(http.server.SimpleHTTPRequestHandler):
         client_ip   = self.client_address[0]
         host_admin  = self.is_admin()
         page = page.replace('{IS_ADMIN}', 'true' if host_admin else 'false')
+        csrf_tok    = admin_core.ADMIN_CSRF_TOKEN if host_admin else ''
+        page = page.replace('{ADMIN_CSRF_TOKEN}', csrf_tok)
        
         # Encode and send the final HTML
         encoded = page.encode('utf-8', 'surrogateescape')
@@ -1749,6 +1751,15 @@ class ModernHandler(http.server.SimpleHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(encoded)))
+        if host_admin:
+            self.send_header(
+                "Set-Cookie",
+                f"admin_session={admin_core.ADMIN_SESSION_SECRET}; Path=/; HttpOnly; SameSite=Strict",
+            )
+            self.send_header(
+                "Set-Cookie",
+                f"admin_csrf={admin_core.ADMIN_CSRF_TOKEN}; Path=/; SameSite=Strict",
+            )
         self.end_headers()
         return buf
 
