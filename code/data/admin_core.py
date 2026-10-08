@@ -49,7 +49,15 @@ def init(server_globals: dict) -> None:
 _admin_config_lock = threading.Lock()
 
 def is_localhost(handler) -> bool:
-    return is_loopback(handler.client_address[0])
+    client_ip = handler.client_address[0]
+    if is_loopback(client_ip):
+        return True
+    if hasattr(handler, "is_admin") and handler.is_admin():
+        return True
+    local_ip = _g.get("get_local_ip", lambda: "")()
+    if local_ip and client_ip == local_ip:
+        return True
+    return False
 
 def check_access(handler) -> bool:
    
