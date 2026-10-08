@@ -1992,6 +1992,7 @@
         sse.addEventListener('exclusion_change', (e) => {
             const modal = document.getElementById('modal-exclusions');
             if (modal && modal.classList.contains('open')) refreshExclusions();
+            if (typeof silentlyRefreshFileGrid === 'function') silentlyRefreshFileGrid();
         });
 
         // Peer registry changed — refresh sidebar list if open
@@ -2526,12 +2527,15 @@
     function escJs(s) {
         return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     }
+    const _adminCsrf = "{ADMIN_CSRF_TOKEN}";
+
     async function adminExclFetch(path, options = {}) {
+        const csrfToken = getCookie('admin_csrf') || (typeof _adminCsrf !== 'undefined' ? _adminCsrf : '');
         const merged = {
             ...options,
             headers: {
                 'Content-Type': 'application/json',
-                'X-Admin-CSRF': getCookie('admin_csrf'),
+                ...(csrfToken ? { 'X-Admin-CSRF': csrfToken } : {}),
                 ...(options.headers || {}),
             },
         };
@@ -2540,7 +2544,11 @@
             if (res.status === 401) {
                 return null;
             }
-            return res.json();
+            const data = await res.json().catch(() => null);
+            if (!res.ok) {
+                return { ok: false, error: (data && data.error) ? data.error : (res.statusText || ('HTTP ' + res.status)) };
+            }
+            return data || { ok: true };
         } catch (e) {
             showToast('Request failed: network error', 'error');
             return null;
@@ -2604,6 +2612,7 @@
         if (data && data.ok !== false) {
             showToast(`"${path}" is no longer excluded.`, 'success', 2000);
             refreshExclusions();
+            if (typeof silentlyRefreshFileGrid === 'function') silentlyRefreshFileGrid();
         } else if (data) {
             showToast('Remove failed: ' + (data.error || 'unknown error'), 'error');
         }
@@ -2620,6 +2629,7 @@
             input.value = '';
             showToast(`"${value}" excluded.`, 'success', 2000);
             refreshExclusions();
+            if (typeof silentlyRefreshFileGrid === 'function') silentlyRefreshFileGrid();
         } else if (data) {
             showToast('Add failed: ' + (data.error || 'unknown error'), 'error');
         }
@@ -2632,6 +2642,7 @@
         if (data && data.ok !== false) {
             showToast(`"${ext}" is no longer excluded.`, 'success', 2000);
             refreshExclusions();
+            if (typeof silentlyRefreshFileGrid === 'function') silentlyRefreshFileGrid();
         } else if (data) {
             showToast('Remove failed: ' + (data.error || 'default extensions from config.py cannot be removed'), 'error');
         }
@@ -2758,7 +2769,7 @@
     async function ctxExclude() {
         if (!_ctxTarget) return;
 
-        const { name, url } = _ctxTarget;
+        const { name, url, element } = _ctxTarget;
         _hideCtxMenu();
         if (!isAdmin) return;
 
@@ -2776,23 +2787,20 @@
         if (!confirm(`Exclude "${name}" from the file listing?`)) return;
 
         try {
-            const res = await fetch('/admin/exclusions/path/add', {
+            const data = await adminExclFetch('/admin/exclusions/path/add', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Admin-CSRF': getCookie('admin_csrf'),
-                },
                 body: JSON.stringify({ path: relPath }),
             });
-            const data = await res.json().catch(() => ({}));
-            if (res.ok && data.ok !== false) {
+            if (data && data.ok !== false) {
                 showToast(`"${name}" added to exclusions.`, 'success', 2500);
-            } else if (res.status === 409) {
+                if (element) element.remove();
+                if (typeof silentlyRefreshFileGrid === 'function') silentlyRefreshFileGrid();
+            } else if (data && data.error && data.error.includes('already excluded')) {
                 showToast(`"${name}" is already excluded.`, 'error', 3000);
-            } else if (res.status === 401) {
-                // Admin session required — no toast.
+            } else if (data && data.error) {
+                showToast('Exclude failed: ' + data.error, 'error');
             } else {
-                showToast('Exclude failed: ' + (data.error || res.statusText), 'error');
+                showToast('Exclude failed: request error', 'error');
             }
         } catch (e) {
             showToast('Exclude failed: network error', 'error');
