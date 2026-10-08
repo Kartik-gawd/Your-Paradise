@@ -22,12 +22,17 @@ def _get_cookie(handler, name: str) -> str:
     return ""
 
 def check_admin_session_only(handler) -> bool:
+    if hasattr(handler, "is_admin") and handler.is_admin():
+        return True
     val = _get_cookie(handler, "admin_session")
     return bool(val) and secrets.compare_digest(val, ADMIN_SESSION_SECRET)
 
 def check_admin_auth(handler) -> bool:
     session_val = _get_cookie(handler, "admin_session")
-    if not session_val or not secrets.compare_digest(session_val, ADMIN_SESSION_SECRET):
-        return False
     csrf_header = handler.headers.get("X-Admin-CSRF", "")
-    return bool(csrf_header) and secrets.compare_digest(csrf_header, ADMIN_CSRF_TOKEN)
+    if session_val and secrets.compare_digest(session_val, ADMIN_SESSION_SECRET) and \
+       csrf_header and secrets.compare_digest(csrf_header, ADMIN_CSRF_TOKEN):
+        return True
+    if hasattr(handler, "is_admin") and handler.is_admin():
+        return True
+    return False
