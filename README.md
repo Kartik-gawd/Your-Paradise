@@ -7,7 +7,7 @@ Share a folder with devices on the same Wi-Fi or LAN network through a clean web
 > **LAN only:** This project is designed for local network sharing and is not intended to expose your files directly to the public internet.
 
 
-### Compatibility: **Windows · macOS · Linux**
+### Compatibility: **Windows || macOS || Linux || Android (Termux)**
 
 ## Features:
 
