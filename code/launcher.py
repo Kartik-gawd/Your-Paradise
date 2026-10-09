@@ -36,8 +36,55 @@ def _escape_applescript_arg(arg: str) -> str:
     # Basic escaping for AppleScript strings
     return arg.replace("\\", "\\\\").replace('"', '\\"')
 
+def _is_termux():
+    return "com.termux" in os.environ.get("PREFIX", "") or "TERMUX_VERSION" in os.environ
+
+def _cli_folder_browser():
+    home = os.path.expanduser("~")
+    current = home
+    for cand in (os.path.join(home, "storage", "shared"), "/storage/emulated/0", home):
+        if os.path.isdir(cand):
+            current = cand
+            break
+    while True:
+        try:
+            subs = sorted(
+                d for d in os.listdir(current)
+                if os.path.isdir(os.path.join(current, d)) and not d.startswith('.')
+            )
+        except OSError:
+            print("Cannot read this folder, going up.")
+            current = os.path.dirname(current) or "/"
+            continue
+        print(f"\nCurrent: {current}")
+        for i, d in enumerate(subs, 1):
+            print(f"  {i}. {d}/")
+        print("[number]=open  ..=up  s=SELECT THIS FOLDER  p=type path  q=quit")
+        try:
+            cmd = input("> ").strip()
+        except (EOFError, KeyboardInterrupt):
+            return None
+        if cmd.lower() == 'q':
+            return None
+        if cmd.lower() == 's':
+            return current
+        if cmd == '..':
+            current = os.path.dirname(current) or "/"
+        elif cmd.lower() == 'p':
+            p = input("Path: ").strip().strip('"')
+            if os.path.isdir(p):
+                current = os.path.abspath(p)
+            else:
+                print("Not a valid directory.")
+        elif cmd.isdigit() and 1 <= int(cmd) <= len(subs):
+            current = os.path.join(current, subs[int(cmd) - 1])
+        else:
+            print("Invalid input.")
+
 def open_folder_picker():
     system = platform.system()
+    if _is_termux():
+        return _cli_folder_browser()
 
     # Tkinter GUI dialog
     if TK_AVAILABLE:
@@ -257,6 +304,11 @@ def run_server_in_process(target_folder):
         finally:
             _notify_clients_server_closing()
             cleanup_extracted_subtitles(target_folder)
+            if _is_termux():
+                try:
+                    input("\nServer stopped. Press Enter to exit...")
+                except (EOFError, KeyboardInterrupt):
+                    pass
             sys.exit(0)
     else:
         print("Error: Invalid folder path.")
@@ -360,7 +412,9 @@ def main():
         run_server_in_process(target_folder)
     else:
         folder = open_folder_picker()
-        if folder:
+        if folder and _is_termux():
+            run_server_in_process(folder)
+        elif folder:
             proc = launch_server_process(folder)
             
             if proc:
