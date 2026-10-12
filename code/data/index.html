@@ -2644,7 +2644,7 @@
             refreshExclusions();
             if (typeof silentlyRefreshFileGrid === 'function') silentlyRefreshFileGrid();
         } else if (data) {
-            showToast('Remove failed: ' + (data.error || 'default extensions from config.py cannot be removed'), 'error');
+            showToast('Remove failed: ' + (data.error || 'unknown error'), 'error');
         }
     }
     (function attachExclusionHandlers() {
