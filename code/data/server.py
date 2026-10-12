@@ -60,6 +60,9 @@ def _get_permissions(ip: str, is_host: bool) -> dict:
 # Secure session cookie
 SESSION_SECRET = secrets.token_urlsafe(32)
 
+# -dc / --disable-cookies flag: disables session cookies requirement so anyone with address has write permissions
+DISABLE_COOKIES = "-dc" in sys.argv or "--disable-cookies" in sys.argv
+
 #  Semaphore that caps concurrent zip-download threads
 zip_semaphore = threading.Semaphore(MAX_CONCURRENT_ZIPS)
 
@@ -257,6 +260,9 @@ class ModernHandler(http.server.SimpleHTTPRequestHandler):
             active_users[ip] = time.time()
 
     def has_write_access(self):
+        if DISABLE_COOKIES:
+            return True
+
         ip = self.client_address[0]
         try:
             if ipaddress.ip_address(ip).is_loopback:
@@ -1817,14 +1823,24 @@ def run_server():
                 raise
 
     try:
-        local_ip   = get_local_ip()
-        auth_param = f"?auth={SECRET_TOKEN}"
-        print(f"\n{'_' * 60}")
-        print("SERVER STARTED")
-        print(f"Port: {current_port}")
-        print(f"Host Admin Link: {_protocol}://127.0.0.1:{current_port}/{auth_param}")
-        print(f"Network URL (Scan QR): {_protocol}://{local_ip}:{current_port}/{auth_param}")
-        display_qr_code(f"{_protocol}://{local_ip}:{current_port}/{auth_param}")
+        local_ip = get_local_ip()
+        if DISABLE_COOKIES:
+            host_link = f"{_protocol}://127.0.0.1:{current_port}/"
+            network_link = f"{_protocol}://{local_ip}:{current_port}/"
+            print(f"\n{'_' * 60}")
+            print("SERVER STARTED (Open Mode: Cookies/Auth Disabled)")
+            print(f"Port: {current_port}")
+            print(f"Host Admin Link: {host_link}")
+            print(f"Network URL (Scan QR): {network_link}")
+            display_qr_code(network_link)
+        else:
+            auth_param = f"?auth={SECRET_TOKEN}"
+            print(f"\n{'_' * 60}")
+            print("SERVER STARTED")
+            print(f"Port: {current_port}")
+            print(f"Host Admin Link: {_protocol}://127.0.0.1:{current_port}/{auth_param}")
+            print(f"Network URL (Scan QR): {_protocol}://{local_ip}:{current_port}/{auth_param}")
+            display_qr_code(f"{_protocol}://{local_ip}:{current_port}/{auth_param}")
 
         print("Press Ctrl+C to stop the server")
         print(f"{'_' * 60}\n")
