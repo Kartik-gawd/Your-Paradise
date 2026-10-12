@@ -630,9 +630,6 @@ def handle_admin_exclusion_extension_remove(handler, body: dict) -> None:
     if norm not in EXCLUDED_EXTENSIONS:
         send_admin_error(handler, 404, f"Extension {norm!r} is not excluded.")
         return
-    if is_default_extension(norm):
-        send_admin_error(handler, 400, f"Extension {norm!r} is a config-defined default and cannot be removed.")
-        return
     remove_excluded_extension(norm)
     write_admin_config()
     _broadcast_exclusion_change("removed", "extension", norm)
