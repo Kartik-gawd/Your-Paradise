@@ -68,7 +68,10 @@ From the project directory:
 python launcher.py
 ```
 
-You can also launch it through an IDE.
+For disabling cookies:
+```bash
+python launcher.py -dc
+```
 
 A folder-selection window will appear. Select the directory you want to serve.
 
