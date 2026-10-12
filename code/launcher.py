@@ -171,76 +171,6 @@ def _clean_subprocess_env():
     return env
 
 
-    system = platform.system()
-
-    if getattr(sys, 'frozen', False):
-        executable = sys.executable
-        args = [executable, target_folder]
-    else:
-        executable = sys.executable
-        script_path = os.path.abspath(__file__)
-        args = [executable, script_path, target_folder]
-
-    proc = None
-
-    if system == "Windows":
-        proc = subprocess.Popen(
-            args,
-            close_fds=True,
-            creationflags=subprocess.CREATE_NEW_CONSOLE,
-            env=_clean_subprocess_env(),
-        )
-
-    elif system == "Darwin":
-        safe_args = " ".join(f'"{_escape_applescript_arg(a)}"' for a in args)
-        osascript_cmd = f'tell application "Terminal" to do script "{safe_args}"'
-        try:
-            subprocess.run(['osascript', '-e', osascript_cmd], env=_clean_subprocess_env())
-            # macOS Terminal launches async; we don't get a Popen object back usually
-            return None
-        except Exception as e:
-            print(f"Failed to launch Terminal: {e}")
-            print("Running server in the current process instead.")
-            run_server_in_process(target_folder)
-        return None
-
-    elif system == "Linux":
-        terminals = [
-            "gnome-terminal", "xfce4-terminal", "konsole", "lxterminal",
-            "tilix", "mate-terminal", "qterminal", "terminator",
-            "alacritty", "xterm"
-        ]
-
-        for term in terminals:
-            term_path = shutil.which(term)
-            if not term_path:
-                print(f"[launcher] '{term}' not found on PATH, skipping.")
-                continue
-            try:
-                if term == "gnome-terminal":
-                    cmd = [term, "--"] + args
-                elif term in ("xfce4-terminal", "qterminal"):
-                    safe_command = " ".join(shlex.quote(arg) for arg in args)
-                    cmd = [term, "-e", safe_command]
-                else:
-                    cmd = [term, "-e"] + args
-                print(f"[launcher] Trying terminal: {cmd}")
-                proc = subprocess.Popen(cmd, close_fds=True)
-                print(f"[launcher] Launched {term} (pid={proc.pid})")
-                break
-            except Exception as e:
-                print(f"[launcher] Failed to launch {term}: {e}")
-                proc = None
-                continue
-
-        if proc is None:
-            print("Could not find a suitable terminal emulator.")
-            print("Running server in the current process instead.")
-            run_server_in_process(target_folder)
-            return None
-
-    return proc
-
 def _app_base_dir():
     if getattr(sys, 'frozen', False):
         return os.path.dirname(os.path.abspath(sys.executable))
@@ -313,16 +243,17 @@ def run_server_in_process(target_folder):
     else:
         print("Error: Invalid folder path.")
         input("Press Enter to exit...")
-def launch_server_process(target_folder):
+def launch_server_process(target_folder, disable_cookies=False):
     system = platform.system()
+    extra_args = ["-dc"] if disable_cookies else []
 
     if getattr(sys, "frozen", False):
         executable = sys.executable
-        args = [executable, target_folder]
+        args = [executable, target_folder] + extra_args
     else:
         executable = sys.executable
         script_path = os.path.abspath(__file__)
-        args = [executable, script_path, target_folder]
+        args = [executable, script_path, target_folder] + extra_args
 
     proc = None
 
@@ -403,19 +334,26 @@ def launch_server_process(target_folder):
     return proc
     
 def main():
-    if len(sys.argv) > 1:
-        target_folder = sys.argv[1]
+    disable_cookies = "-dc" in sys.argv or "--disable-cookies" in sys.argv
+    if disable_cookies:
+        server.DISABLE_COOKIES = True
+
+    pos_args = [a for a in sys.argv[1:] if a not in ("-dc", "--disable-cookies")]
+
+    if pos_args:
+        target_folder = pos_args[0]
         if getattr(sys, 'frozen', False):
             attach_console()
         if sys.platform == "win32":
-            os.system(f"title WiFi Server - {target_folder}")
+            title_suffix = " (Open Mode: -dc)" if disable_cookies else ""
+            os.system(f"title WiFi Server - {target_folder}{title_suffix}")
         run_server_in_process(target_folder)
     else:
         folder = open_folder_picker()
         if folder and _is_termux():
             run_server_in_process(folder)
         elif folder:
-            proc = launch_server_process(folder)
+            proc = launch_server_process(folder, disable_cookies=disable_cookies)
             
             if proc:
                 proc.wait()  # Linux/Windows wait
