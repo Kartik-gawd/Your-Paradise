@@ -16,10 +16,10 @@ admin_notes: dict     = {}
 # subnets can be restored later. Persisted in admin_config.json.
 previous_networks: list = []
 
-# Admin-managed exclusion system: explicit paths + extra extensions on top of
-# config.py's static EXCLUDED_EXTENSIONS. EXCLUDED_EXTENSIONS below is always
-# the EFFECTIVE (base ∪ admin-added) set; only the admin-added portion is
-# persisted, so changes to config.py's base set are picked up automatically.
+# Admin-managed exclusion system: explicit paths + extensions.
+# EXCLUDED_EXTENSIONS is persisted in admin_config.json so that administrator-defined
+# changes (both additions and removals of default extensions) remain effective across
+# server restarts. If no configuration exists, default exclusions are loaded.
 EXCLUDED_PATHS: set      = set()
 EXCLUDED_EXTENSIONS: set = set()
 _BASE_EXCLUDED_EXTENSIONS: set = set()
@@ -99,12 +99,16 @@ def load_admin_config(base_file: str, admin_password: str, base_excluded_extensi
                 previous_networks.append(ipaddress.ip_network(net_str, strict=False))
             except ValueError:
                 print(f"[Admin] Warning: invalid previous network in config: {net_str!r}")
-        # Backward compatible: keys are absent in configs written before this feature.
+        # Load administrator-defined exclusions (or defaults if not present)
         EXCLUDED_PATHS.clear()
-        EXCLUDED_PATHS.update(p for p in (normalize_path(x) for x in cfg.get("excluded_paths", [])) if p)
-        admin_added_ext = {e for e in (normalize_extension(x) for x in cfg.get("excluded_extensions", [])) if e}
+        if "excluded_paths" in cfg and cfg.get("excluded_paths") is not None:
+            EXCLUDED_PATHS.update(p for p in (normalize_path(x) for x in cfg.get("excluded_paths", [])) if p)
+
         EXCLUDED_EXTENSIONS.clear()
-        EXCLUDED_EXTENSIONS.update(_BASE_EXCLUDED_EXTENSIONS | admin_added_ext)
+        if "excluded_extensions" in cfg and cfg.get("excluded_extensions") is not None:
+            EXCLUDED_EXTENSIONS.update(e for e in (normalize_extension(x) for x in cfg.get("excluded_extensions", [])) if e)
+        else:
+            EXCLUDED_EXTENSIONS.update(_BASE_EXCLUDED_EXTENSIONS)
         # Restore the persisted strict-mode state.
         set_strict_mode(bool(cfg.get("strict_mode", False)))
         print(f"[Admin] Config loaded: {len(ALLOWED_NETWORKS)} networks, "
@@ -150,15 +154,15 @@ def add_excluded_extension(ext: str) -> str:
     return norm
 
 def remove_excluded_extension(ext: str) -> str:
-    """Only allows removing admin-added extensions; base config.py extensions persist."""
+    """Removes an excluded extension and invalidates listing cache."""
     norm = normalize_extension(ext)
-    if norm and norm not in _BASE_EXCLUDED_EXTENSIONS:
+    if norm:
         EXCLUDED_EXTENSIONS.discard(norm)
         _invalidate_listing_cache()
     return norm
 
 def is_default_extension(ext: str) -> bool:
-    """True if ext is one of config.py's static extensions (not admin-removable)."""
+    """True if ext is one of config.py's static default extensions."""
     return normalize_extension(ext) in _BASE_EXCLUDED_EXTENSIONS
 
 def write_admin_config(base_file: str = "") -> None:
@@ -172,8 +176,7 @@ def write_admin_config(base_file: str = "") -> None:
             "strict_mode": get_strict_mode(),
             "previous_networks": [str(n) for n in previous_networks],
             "excluded_paths": sorted(EXCLUDED_PATHS),
-            # Only persist admin-added extensions; base set comes from config.py.
-            "excluded_extensions": sorted(EXCLUDED_EXTENSIONS - _BASE_EXCLUDED_EXTENSIONS),
+            "excluded_extensions": sorted(EXCLUDED_EXTENSIONS),
         }
         # If no base_file was supplied, fall back to the path recorded by
         # load_admin_config(). This lets admin handlers call
